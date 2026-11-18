@@ -64,11 +64,11 @@ class StoreBrowserTests(unittest.TestCase):
             self.errors.append(f"{response.status} — {response.url}")
 
     def go(self, route=""):
+        # Opening a direct link must load a new document even when only the hash changes.
+        self.page.goto("about:blank")
         response = self.page.goto(config.url + ("#" + route if route else ""), wait_until="domcontentloaded")
-        if response is None:
-            response = self.page.reload(wait_until="domcontentloaded")
-        if response is not None:
-            self.assertTrue(response.ok, f"{response.status} — {response.url}")
+        self.assertIsNotNone(response)
+        self.assertTrue(response.ok, f"{response.status} — {response.url}")
         expect(self.main().get_by_role("heading", level=1)).to_be_visible(timeout=NAVIGATION_TIMEOUT)
 
     def main(self):
@@ -131,6 +131,11 @@ class StoreBrowserTests(unittest.TestCase):
                 expect(self.main().get_by_text(re.compile(r"\d" + RUB)).first).to_be_visible()
                 expect(self.main().get_by_role("button", name=re.compile("В корзину"))).to_be_visible()
                 self.assert_imgs_decode()
+
+        self.go("/product/SK01")
+        self.page.reload(wait_until="domcontentloaded")
+        expect(self.main().get_by_role("heading", level=1)).to_have_text("Борщ с говядиной")
+        self.assert_imgs_decode()
 
         self.go("/product/nb-unknown")
         expect(self.main()).to_contain_text(re.compile(r"не найден", re.IGNORECASE))
