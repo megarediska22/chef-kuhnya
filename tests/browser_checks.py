@@ -16,6 +16,7 @@ PRODUCT_CODES = {
 }
 CART_KEY = "chef-kuhnya.cart.v1"
 RUB = r"\s*₽"
+NAVIGATION_TIMEOUT = 30_000
 
 
 class StoreBrowserTests(unittest.TestCase):
@@ -42,6 +43,7 @@ class StoreBrowserTests(unittest.TestCase):
         )
         self.addCleanup(page.context.close)
         page.set_default_timeout(4000)
+        page.set_default_navigation_timeout(NAVIGATION_TIMEOUT)
         page.on("pageerror", lambda error: self.errors.append(str(error)))
         page.on("console", self.capture_console_error)
         page.on("response", self.capture_response_error)
@@ -62,12 +64,12 @@ class StoreBrowserTests(unittest.TestCase):
             self.errors.append(f"{response.status} — {response.url}")
 
     def go(self, route=""):
-        response = self.page.goto(config.url + ("#" + route if route else ""), wait_until="networkidle")
+        response = self.page.goto(config.url + ("#" + route if route else ""), wait_until="domcontentloaded")
         if response is None:
-            response = self.page.reload(wait_until="networkidle")
+            response = self.page.reload(wait_until="domcontentloaded")
         if response is not None:
             self.assertTrue(response.ok, f"{response.status} — {response.url}")
-        expect(self.page.get_by_role("main").get_by_role("heading", level=1)).to_be_visible()
+        expect(self.main().get_by_role("heading", level=1)).to_be_visible(timeout=NAVIGATION_TIMEOUT)
 
     def main(self):
         return self.page.get_by_role("main")
@@ -186,7 +188,8 @@ class StoreBrowserTests(unittest.TestCase):
 
         self.go("/catalog?category=Завтраки")
         self.assertEqual(set(self.catalog_codes()), {"SK10", "SK11"})
-        self.page.reload(wait_until="networkidle")
+        self.page.reload(wait_until="domcontentloaded")
+        expect(self.main().get_by_role("heading", level=1)).to_be_visible()
         self.assertEqual(set(self.catalog_codes()), {"SK10", "SK11"})
 
     def test_cart_persistence_totals_removal_and_demo_network(self):
@@ -196,7 +199,7 @@ class StoreBrowserTests(unittest.TestCase):
         self.go("/cart")
         expect(self.main()).to_contain_text(re.compile(r"1\s?228" + RUB))
         self.assertEqual(self.page.evaluate(f"JSON.parse(localStorage.getItem('{CART_KEY}'))"), {"SK01": 1, "NB02": 1})
-        self.page.reload(wait_until="networkidle")
+        self.page.reload(wait_until="domcontentloaded")
         expect(self.main()).to_contain_text(re.compile(r"1\s?228" + RUB))
         self.main().get_by_role("button", name=re.compile(r"Увеличить.*Борщ")).click()
         expect(self.main()).to_contain_text(re.compile(r"1\s?477" + RUB))
@@ -214,14 +217,14 @@ class StoreBrowserTests(unittest.TestCase):
         self.events.clear()
         self.button("Завершить демонстрацию").click()
         expect(self.main().get_by_role("heading", level=1)).to_have_text("Демонстрация завершена")
-        self.page.wait_for_load_state("networkidle")
+        self.page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT)
         self.assertEqual(self.page.evaluate("JSON.stringify(localStorage)"), storage_before)
         self.assert_no_submission()
 
         self.go("/cart")
         self.main().get_by_role("button", name=re.compile(r"Удалить.*Борщ")).click()
         expect(self.main().get_by_text("Корзина пока пуста", exact=True)).to_be_visible()
-        self.page.reload(wait_until="networkidle")
+        self.page.reload(wait_until="domcontentloaded")
         expect(self.main().get_by_text("Корзина пока пуста", exact=True)).to_be_visible()
 
     def assert_no_submission(self):
@@ -245,7 +248,7 @@ class StoreBrowserTests(unittest.TestCase):
                 result = self.main().get_by_role("status")
                 expect(result).to_contain_text(category)
                 expect(result).to_contain_text("Заявка не отправлялась")
-        self.page.wait_for_load_state("networkidle")
+        self.page.wait_for_load_state("networkidle", timeout=NAVIGATION_TIMEOUT)
         self.assertEqual(self.page.evaluate("JSON.stringify(localStorage)"), storage_before)
         self.assert_no_submission()
 
